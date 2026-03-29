@@ -3,7 +3,7 @@ import { z } from "zod";
 import {
   supabaseEnvSchema,
   type SupabaseEnvParsed
-} from "@/lib/types/env";
+} from "../types/env";
 
 export type { SupabaseEnvParsed };
 
