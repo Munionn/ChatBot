@@ -1,4 +1,6 @@
-export type ChatModelOption = { id: string; label: string };
+import type { ChatModelOption } from "@/lib/types/chat-models";
+
+export type { ChatModelOption };
 
 export const DEFAULT_HF_CHAT_MODEL = "Qwen/Qwen3.5-9B";
 

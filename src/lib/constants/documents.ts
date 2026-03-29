@@ -1,5 +1,7 @@
 export const DOCUMENT_MAX_BYTES = 5 * 1024 * 1024;
 
+export const DOCUMENT_MAX_PER_MESSAGE = 12;
+
 export const DOCUMENT_BUCKET = "chat-documents";
 
 export const DOCUMENT_ALLOWED_MIME = new Set([

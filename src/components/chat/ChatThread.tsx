@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 
-import type { ChatMessageRow } from "@/lib/chat/api";
+import type { ChatMessageRow } from "@/lib/types/chat";
 import { Skeleton } from "@/components/ui/skeleton";
 
 type ChatThreadProps = {
@@ -26,7 +26,7 @@ export function ChatThread({
 
   if (isLoading) {
     return (
-      <div className="flex flex-1 flex-col gap-3 overflow-y-auto p-4">
+      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4">
         <Skeleton className="ml-auto h-16 w-[min(100%,320px)] rounded-2xl" />
         <Skeleton className="h-24 w-[min(100%,85%)] rounded-2xl" />
         <Skeleton className="ml-auto h-12 w-[min(100%,240px)] rounded-2xl" />
@@ -39,7 +39,7 @@ export function ChatThread({
     messages.length === 0 && !streamingActive;
 
   return (
-    <div className="flex flex-1 flex-col overflow-y-auto p-4">
+    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4">
       {showEmpty ? (
         <div className="m-auto max-w-md rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 p-8 text-center text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-400">
           {emptyHint}
@@ -55,6 +55,19 @@ export function ChatThread({
                   : "mr-auto border border-slate-200 bg-white text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
               }`}
             >
+              {m.role === "user" && m.imageUrls && m.imageUrls.length > 0 ? (
+                <div className="mb-2 flex flex-wrap gap-2">
+                  {m.imageUrls.map((src, i) => (
+                    // eslint-disable-next-line @next/next/no-img-element -- signed URLs from API
+                    <img
+                      key={`${m.id}-img-${i}`}
+                      src={src}
+                      alt=""
+                      className="max-h-48 max-w-full rounded-lg object-contain"
+                    />
+                  ))}
+                </div>
+              ) : null}
               {m.content}
               {m.role === "assistant" && m.model ? (
                 <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">

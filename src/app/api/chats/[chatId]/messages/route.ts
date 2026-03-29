@@ -3,15 +3,14 @@ import { NextResponse } from "next/server";
 import { sendMessageBodySchema } from "@/lib/api/schemas";
 import { getAnonSessionIdFromUser, isGuestUser } from "@/lib/auth/session-context";
 import { GUEST_MESSAGE_QUOTA } from "@/lib/constants/chat";
+import { attachSignedImageUrls } from "@/lib/chat-images/message-image-urls";
 import { loadPendingImageDataUrls } from "@/lib/chat-images/load-pending-images";
 import { DOCUMENT_CONTEXT_MAX_CHARS } from "@/lib/constants/documents";
-import {
-  selectChunksForPrompt,
-  type ChunkRow
-} from "@/lib/documents/retrieval";
+import { selectChunksForPrompt } from "@/lib/documents/retrieval";
+import type { ChunkRow } from "@/lib/types/documents";
 import { verifyDocumentsForChatMessage } from "@/lib/documents/verify-for-message";
 import { resolveAllowedChatModel } from "@/lib/llm/allowed-models";
-import type { ContextDoc } from "@/lib/llm/types";
+import type { ContextDoc } from "@/lib/types/llm";
 import { getHuggingFaceClient } from "@/lib/llm/huggingface";
 import { streamChat } from "@/lib/llm/stream-chat";
 import { parseGuestConsumeResult, parseGuestRemainingScalar } from "@/lib/guest-quota";
@@ -52,7 +51,10 @@ export async function GET(request: Request, context: RouteContext) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ messages: data ?? [] });
+  const rows = data ?? [];
+  const messages = await attachSignedImageUrls(supabase, rows);
+
+  return NextResponse.json({ messages });
 }
 
 export async function POST(request: Request, context: RouteContext) {

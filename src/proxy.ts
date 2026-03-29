@@ -6,7 +6,7 @@ import {
   getSupabaseAnonKey,
   getSupabaseUrl,
   isSupabaseConfigured
-} from "@/lib/supabase/env";
+} from "./lib/supabase/env";
 
 export const config = {
   matcher: ["/((?!_next|.*\\..*).*)"]

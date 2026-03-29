@@ -1,4 +1,4 @@
-import type { StreamChatInput } from "./types";
+import type { StreamChatInput } from "@/lib/types/llm";
 
 function contextSystemBlock(input: StreamChatInput): string | null {
   const docs = input.contextDocs?.filter((d) => d.content.trim()) ?? [];

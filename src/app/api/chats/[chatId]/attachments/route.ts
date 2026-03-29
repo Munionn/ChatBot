@@ -16,7 +16,9 @@ type RouteContext = { params: Promise<{ chatId: string }> };
 
 function resolveImageMime(typeHint: string, safeName: string): string | null {
   const raw = typeHint?.split(";")[0]?.trim().toLowerCase() ?? "";
-  if (raw && CHAT_IMAGE_ALLOWED_MIME.has(raw)) return raw;
+  if (raw && raw !== "application/octet-stream" && CHAT_IMAGE_ALLOWED_MIME.has(raw)) {
+    return raw;
+  }
   const n = safeName.toLowerCase();
   if (n.endsWith(".jpg") || n.endsWith(".jpeg")) return "image/jpeg";
   if (n.endsWith(".png")) return "image/png";

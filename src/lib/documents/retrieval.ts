@@ -1,4 +1,5 @@
-import type { ContextDoc } from "@/lib/llm/types";
+import type { ChunkRow } from "@/lib/types/documents";
+import type { ContextDoc } from "@/lib/types/llm";
 
 const STOPWORDS = new Set([
   "the",
@@ -62,11 +63,6 @@ const STOPWORDS = new Set([
   "their",
   "which"
 ]);
-
-export type ChunkRow = {
-  content: string;
-  documentName: string;
-};
 
 function tokenizeQuery(query: string): string[] {
   const terms = query

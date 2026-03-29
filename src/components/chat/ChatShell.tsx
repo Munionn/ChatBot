@@ -21,13 +21,14 @@ import {
   CHAT_IMAGE_MAX_PER_MESSAGE,
   isChatImageFileAllowed
 } from "@/lib/constants/chat-images";
+import { DOCUMENT_MAX_PER_MESSAGE } from "@/lib/constants/documents";
 import { isDocumentFileAllowed } from "@/lib/documents/file-meta";
 import { chatKeys, messageKeys } from "@/lib/chat/query-keys";
 import { deferRouterAction } from "@/lib/next/defer-router-action";
 import { authFetch } from "@/lib/supabase/fetch-with-session";
 
 import { ChatComposerBar } from "./ChatComposerBar";
-import type { LocalDocPreview, LocalImagePreview } from "./ChatComposerBar";
+import type { LocalDocPreview, LocalImagePreview } from "@/lib/types/chat-ui";
 import { ChatSidebar, ChatSidebarMobileToggle } from "./ChatSidebar";
 import { ChatThread } from "./ChatThread";
 import { useChatRealtime } from "@/hooks/use-chat-realtime";
@@ -113,6 +114,7 @@ export default function ChatShell() {
   const [docs, setDocs] = useState<LocalDocPreview[]>([]);
   const lastSendRef = useRef<LastSendPayload | null>(null);
   const streamTargetRef = useRef<{ chatId: string } | null>(null);
+  const sendInFlightRef = useRef(false);
 
   const sessionReady = !!sessionUser && !isBootstrapping;
 
@@ -257,6 +259,7 @@ export default function ChatShell() {
 
   const pickImages = useCallback((files: FileList | null) => {
     if (!files?.length) return;
+    const list = Array.from(files);
     setImages((p) => {
       const room = CHAT_IMAGE_MAX_PER_MESSAGE - p.length;
       if (room <= 0) {
@@ -266,8 +269,8 @@ export default function ChatShell() {
         return p;
       }
       const next: LocalImagePreview[] = [];
-      for (let i = 0; i < files.length && next.length < room; i++) {
-        const f = files[i];
+      for (let i = 0; i < list.length && next.length < room; i++) {
+        const f = list[i];
         if (!isChatImageFileAllowed(f)) {
           toast.error(
             `${f.name || "Image"}: use JPEG, PNG, GIF, or WebP under 2 MB.`
@@ -282,7 +285,7 @@ export default function ChatShell() {
         });
       }
       if (next.length === 0) return p;
-      if (files.length > room) {
+      if (list.length > room) {
         toast.message("Image limit", {
           description: `Only ${room} more image slot(s) available.`
         });
@@ -293,16 +296,32 @@ export default function ChatShell() {
 
   const pickDocs = useCallback((files: FileList | null) => {
     if (!files?.length) return;
-    const next: LocalDocPreview[] = [];
-    for (let i = 0; i < files.length; i++) {
-      const f = files[i];
-      if (!isDocumentFileAllowed(f)) {
-        toast.error(`${f.name}: use .txt, .md, or .pdf under 5 MB.`);
-        continue;
+    const list = Array.from(files);
+    setDocs((p) => {
+      const room = DOCUMENT_MAX_PER_MESSAGE - p.length;
+      if (room <= 0) {
+        toast.error(
+          `At most ${DOCUMENT_MAX_PER_MESSAGE} documents per message.`
+        );
+        return p;
       }
-      next.push({ id: crypto.randomUUID(), name: f.name, file: f });
-    }
-    if (next.length) setDocs((p) => [...p, ...next]);
+      const next: LocalDocPreview[] = [];
+      for (let i = 0; i < list.length && next.length < room; i++) {
+        const f = list[i];
+        if (!isDocumentFileAllowed(f)) {
+          toast.error(`${f.name}: use .txt, .md, or .pdf under 5 MB.`);
+          continue;
+        }
+        next.push({ id: crypto.randomUUID(), name: f.name, file: f });
+      }
+      if (next.length === 0) return p;
+      if (list.length > room) {
+        toast.message("Document limit", {
+          description: `Only ${room} more file slot(s) available.`
+        });
+      }
+      return [...p, ...next];
+    });
   }, []);
 
   const removeImage = useCallback((id: string) => {
@@ -323,6 +342,12 @@ export default function ChatShell() {
       let text = content.trim();
       const hasAttachments = images.length > 0 || docs.length > 0;
       if (!text && !hasAttachments) return;
+
+      if (sendInFlightRef.current) return;
+      sendInFlightRef.current = true;
+      setSendState("sending");
+      setStreamingText("");
+
       if (!text && hasAttachments) {
         const parts: string[] = [];
         if (images.length > 0) parts.push("image(s)");
@@ -330,166 +355,200 @@ export default function ChatShell() {
         text = `Please use the attached ${parts.join(" and ")}.`;
       }
 
-      let targetId = explicitChatId;
-      if (!targetId) {
-        const created = await createChat(text.slice(0, 50) || "New chat");
-        targetId = created.id;
-        setRoutingChatId(targetId);
-        await qc.invalidateQueries({ queryKey: chatKeys.list() });
-        deferRouterAction(() => router.push(`/chat/${targetId}`));
-      }
+      const snapshotImages = images;
+      const snapshotDocs = docs;
 
-      const documentIds: string[] = [];
-      if (docs.length > 0) {
-        for (const d of docs) {
-          try {
-            const { id } = await uploadDocument(d.file, targetId);
-            documentIds.push(id);
-          } catch (e) {
-            toast.error(
-              e instanceof Error ? e.message : "Document upload failed"
-            );
-            return;
-          }
-        }
-      }
+      let previewBlobUrls: string[] = [];
+      let msgKey: ReturnType<typeof messageKeys.byChat>;
+      let previous: { messages: ChatMessageRow[] } | undefined;
 
-      const attachmentIds: string[] = [];
-      if (images.length > 0) {
-        if (images.length > CHAT_IMAGE_MAX_PER_MESSAGE) {
-          toast.error(
-            `At most ${CHAT_IMAGE_MAX_PER_MESSAGE} images per message.`
-          );
-          return;
-        }
-        for (const img of images) {
-          try {
-            const { id } = await uploadChatImage(img.file, targetId);
-            attachmentIds.push(id);
-          } catch (e) {
-            toast.error(
-              e instanceof Error ? e.message : "Image upload failed"
-            );
-            return;
-          }
-        }
-      }
-
-      const msgKey = messageKeys.byChat(targetId);
-      await qc.cancelQueries({ queryKey: msgKey });
-      const previous = qc.getQueryData<{ messages: ChatMessageRow[] }>(msgKey);
-      const optimisticId = `optimistic-${Date.now()}`;
-      qc.setQueryData(msgKey, (old: { messages: ChatMessageRow[] } | undefined) => ({
-        messages: [
-          ...(old?.messages ?? []),
-          {
-            id: optimisticId,
-            role: "user",
-            content: text,
-            created_at: new Date().toISOString()
-          }
-        ]
-      }));
-
-      lastSendRef.current = {
-        chatId: targetId,
-        content: text,
-        model: selectedModelId
-      };
-
-      setSendState("sending");
-      setStreamingText("");
-      setInput("");
-      setImages((imgs) => {
-        imgs.forEach((i) => URL.revokeObjectURL(i.url));
-        return [];
-      });
-      setDocs([]);
-
-      streamTargetRef.current = { chatId: targetId };
       try {
-        const res = await authFetch(`/api/chats/${targetId}/messages`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            content: text,
-            ...(selectedModelId ? { model: selectedModelId } : {}),
-            ...(documentIds.length > 0 ? { documentIds } : {}),
-            ...(attachmentIds.length > 0 ? { attachmentIds } : {})
-          })
-        });
-
-        if (res.status === 429) {
-          const j = (await res.json().catch(() => ({}))) as {
-            remaining?: number;
-          };
-          if (typeof j.remaining === "number") {
-            toast.message("Guest limit reached", {
-              description: `Remaining: ${j.remaining}`
-            });
-          }
-          if (previous) qc.setQueryData(msgKey, previous);
-          else qc.removeQueries({ queryKey: msgKey });
-          setSendState("blocked");
-          setStreamingText(null);
-          await refreshRemaining();
-          return;
+        let targetId = explicitChatId;
+        if (!targetId) {
+          const created = await createChat(text.slice(0, 50) || "New chat");
+          targetId = created.id;
+          setRoutingChatId(targetId);
+          await qc.invalidateQueries({ queryKey: chatKeys.list() });
+          deferRouterAction(() => router.push(`/chat/${targetId}`));
         }
 
-        if (res.status === 404) {
-          const j = (await res.json().catch(() => ({}))) as { error?: string };
-          qc.removeQueries({ queryKey: msgKey });
+        const documentIds: string[] = [];
+        if (snapshotDocs.length > 0) {
+          if (snapshotDocs.length > DOCUMENT_MAX_PER_MESSAGE) {
+            toast.error(
+              `At most ${DOCUMENT_MAX_PER_MESSAGE} documents per message.`
+            );
+            setSendState("idle");
+            setStreamingText(null);
+            return;
+          }
+          for (const d of snapshotDocs) {
+            try {
+              const { id } = await uploadDocument(d.file, targetId);
+              documentIds.push(id);
+            } catch (e) {
+              toast.error(
+                e instanceof Error ? e.message : "Document upload failed"
+              );
+              setSendState("idle");
+              setStreamingText(null);
+              return;
+            }
+          }
+        }
+
+        const attachmentIds: string[] = [];
+        if (snapshotImages.length > 0) {
+          if (snapshotImages.length > CHAT_IMAGE_MAX_PER_MESSAGE) {
+            toast.error(
+              `At most ${CHAT_IMAGE_MAX_PER_MESSAGE} images per message.`
+            );
+            setSendState("idle");
+            setStreamingText(null);
+            return;
+          }
+          for (const img of snapshotImages) {
+            try {
+              const { id } = await uploadChatImage(img.file, targetId);
+              attachmentIds.push(id);
+            } catch (e) {
+              toast.error(
+                e instanceof Error ? e.message : "Image upload failed"
+              );
+              setSendState("idle");
+              setStreamingText(null);
+              return;
+            }
+          }
+        }
+
+        previewBlobUrls = snapshotImages.map((i) => i.url);
+
+        msgKey = messageKeys.byChat(targetId);
+        await qc.cancelQueries({ queryKey: msgKey });
+        previous = qc.getQueryData<{ messages: ChatMessageRow[] }>(msgKey);
+        const optimisticId = `optimistic-${Date.now()}`;
+        qc.setQueryData(msgKey, (old: { messages: ChatMessageRow[] } | undefined) => ({
+          messages: [
+            ...(old?.messages ?? []),
+            {
+              id: optimisticId,
+              role: "user",
+              content: text,
+              created_at: new Date().toISOString(),
+              ...(previewBlobUrls.length > 0
+                ? { imageUrls: previewBlobUrls }
+                : {})
+            }
+          ]
+        }));
+
+        lastSendRef.current = {
+          chatId: targetId,
+          content: text,
+          model: selectedModelId
+        };
+
+        setInput("");
+        setImages([]);
+        setDocs([]);
+
+        streamTargetRef.current = { chatId: targetId };
+        try {
+          const res = await authFetch(`/api/chats/${targetId}/messages`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              content: text,
+              ...(selectedModelId ? { model: selectedModelId } : {}),
+              ...(documentIds.length > 0 ? { documentIds } : {}),
+              ...(attachmentIds.length > 0 ? { attachmentIds } : {})
+            })
+          });
+
+          if (res.status === 429) {
+            const j = (await res.json().catch(() => ({}))) as {
+              remaining?: number;
+            };
+            if (typeof j.remaining === "number") {
+              toast.message("Guest limit reached", {
+                description: `Remaining: ${j.remaining}`
+              });
+            }
+            if (previous) qc.setQueryData(msgKey, previous);
+            else qc.removeQueries({ queryKey: msgKey });
+            setSendState("blocked");
+            setStreamingText(null);
+            await refreshRemaining();
+            return;
+          }
+
+          if (res.status === 404) {
+            const j = (await res.json().catch(() => ({}))) as { error?: string };
+            qc.removeQueries({ queryKey: msgKey });
+            setStreamingText(null);
+            setSendState("idle");
+            setRoutingChatId(null);
+            void qc.invalidateQueries({ queryKey: chatKeys.list() });
+            deferRouterAction(() => router.replace("/chat"));
+            toast.error(
+              typeof j.error === "string"
+                ? j.error
+                : "Chat not found for this session."
+            );
+            return;
+          }
+
+          if (!res.ok) {
+            const j = await res.json().catch(() => ({}));
+            throw new Error(
+              typeof j.error === "string" ? j.error : res.statusText
+            );
+          }
+
+          if (!res.body) throw new Error("No response body");
+
+          await readSseStream(
+            res.body,
+            (t) => setStreamingText((prev) => (prev ?? "") + t),
+            (rem) => {
+              if (typeof rem === "number") void refreshRemaining();
+            }
+          );
+
           setStreamingText(null);
           setSendState("idle");
-          setRoutingChatId(null);
-          void qc.invalidateQueries({ queryKey: chatKeys.list() });
-          deferRouterAction(() => router.replace("/chat"));
-          toast.error(
-            typeof j.error === "string"
-              ? j.error
-              : "Chat not found for this session."
-          );
-          return;
-        }
-
-        if (!res.ok) {
-          const j = await res.json().catch(() => ({}));
-          throw new Error(
-            typeof j.error === "string" ? j.error : res.statusText
-          );
-        }
-
-        if (!res.body) throw new Error("No response body");
-
-        await readSseStream(
-          res.body,
-          (t) => setStreamingText((prev) => (prev ?? "") + t),
-          (rem) => {
-            if (typeof rem === "number") void refreshRemaining();
+          await qc.invalidateQueries({ queryKey: msgKey });
+          await qc.invalidateQueries({ queryKey: chatKeys.list() });
+          await refreshRemaining();
+        } catch (e) {
+          if (previous) qc.setQueryData(msgKey, previous);
+          else qc.removeQueries({ queryKey: msgKey });
+          setStreamingText(null);
+          setSendState("error");
+          toast.error(e instanceof Error ? e.message : "Send failed");
+        } finally {
+          streamTargetRef.current = null;
+          if (previewBlobUrls.length > 0) {
+            previewBlobUrls.forEach((u) => URL.revokeObjectURL(u));
           }
-        );
-
-        setStreamingText(null);
-        setSendState("idle");
-        await qc.invalidateQueries({ queryKey: msgKey });
-        await qc.invalidateQueries({ queryKey: chatKeys.list() });
-        await refreshRemaining();
+        }
       } catch (e) {
-        if (previous) qc.setQueryData(msgKey, previous);
-        else qc.removeQueries({ queryKey: msgKey });
+        setSendState("idle");
         setStreamingText(null);
-        setSendState("error");
-        toast.error(e instanceof Error ? e.message : "Send failed");
+        toast.error(
+          e instanceof Error ? e.message : "Could not start message send"
+        );
       } finally {
-        streamTargetRef.current = null;
+        sendInFlightRef.current = false;
       }
     },
     [sessionUser, images, docs, qc, router, selectedModelId, refreshRemaining]
   );
 
   const handleSend = useCallback(() => {
-    void runSend(input, chatId);
-  }, [input, chatId, runSend]);
+    void runSend(input, effectiveChatId);
+  }, [input, effectiveChatId, runSend]);
 
   const handleRetry = useCallback(() => {
     const last = lastSendRef.current;
@@ -563,7 +622,7 @@ export default function ChatShell() {
           remaining={remaining}
         />
 
-        <div className="flex min-w-0 flex-1 flex-col">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <ChatThread
             messages={messages}
             streamingText={streamingText}

@@ -1,14 +1,62 @@
 "use client";
 
-import { useCallback, useRef, type ClipboardEvent } from "react";
-import { FileText, ImagePlus, RotateCcw, Send } from "lucide-react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ClipboardEvent
+} from "react";
+import { FileText, Image as ImageIcon, ImagePlus, RotateCcw, Send } from "lucide-react";
 
-import type { ChatModelOption } from "@/lib/chat/api";
+import type { ChatModelOption } from "@/lib/types/chat-models";
+import type { LocalDocPreview, LocalImagePreview } from "@/lib/types/chat-ui";
 import { Button } from "@/components/ui/button";
+import { CHAT_IMAGE_MAX_PER_MESSAGE } from "@/lib/constants/chat-images";
+import { DOCUMENT_MAX_PER_MESSAGE } from "@/lib/constants/documents";
 import { Textarea } from "@/components/ui/textarea";
 
-export type LocalImagePreview = { id: string; url: string; name: string; file: File };
-export type LocalDocPreview = { id: string; name: string; file: File };
+export type { LocalDocPreview, LocalImagePreview };
+
+function ImageAttachmentPreview({
+  img,
+  onRemove
+}: {
+  img: LocalImagePreview;
+  onRemove: () => void;
+}) {
+  const [thumbFailed, setThumbFailed] = useState(false);
+
+  return (
+    <div className="flex min-w-0 max-w-full items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs dark:border-slate-700 dark:bg-slate-800">
+      <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-md border border-slate-200 bg-slate-100 dark:border-slate-600 dark:bg-slate-900">
+        {!thumbFailed ? (
+          // eslint-disable-next-line @next/next/no-img-element -- blob: preview
+          <img
+            src={img.url}
+            alt=""
+            className="h-full w-full object-cover"
+            onError={() => setThumbFailed(true)}
+          />
+        ) : (
+          <ImageIcon className="size-5 text-slate-400" aria-hidden />
+        )}
+      </div>
+      <ImageIcon className="size-3.5 shrink-0 text-sky-600 dark:text-sky-400" aria-hidden />
+      <span className="min-w-0 flex-1 truncate" title={img.name}>
+        {img.name || "Image"}
+      </span>
+      <button
+        type="button"
+        className="shrink-0 text-slate-500 hover:text-red-600 dark:hover:text-red-400"
+        onClick={onRemove}
+        aria-label="Remove image"
+      >
+        ×
+      </button>
+    </div>
+  );
+}
 
 type ChatComposerBarProps = {
   input: string;
@@ -51,6 +99,11 @@ export function ChatComposerBar({
 }: ChatComposerBarProps) {
   const imgInputRef = useRef<HTMLInputElement>(null);
   const docInputRef = useRef<HTMLInputElement>(null);
+  const [clientMounted, setClientMounted] = useState(false);
+
+  useEffect(() => {
+    setClientMounted(true);
+  }, []);
 
   const onPaste = useCallback(
     (e: ClipboardEvent<HTMLTextAreaElement>) => {
@@ -82,38 +135,26 @@ export function ChatComposerBar({
     !blocked;
 
   return (
-    <div className="border-t border-slate-200 bg-white/95 p-3 backdrop-blur dark:border-slate-800 dark:bg-slate-950/95">
+    <div className="shrink-0 border-t border-slate-200 bg-white/95 p-3 backdrop-blur dark:border-slate-800 dark:bg-slate-950/95">
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-2">
         {(imagePreviews.length > 0 || docPreviews.length > 0) && (
-          <div className="flex flex-wrap gap-2">
+          <div className="flex min-h-[4.5rem] flex-wrap gap-2 rounded-lg border border-dashed border-slate-200 bg-slate-50/90 p-2 dark:border-slate-600 dark:bg-slate-900/60">
             {imagePreviews.map((img) => (
-              <div
+              <ImageAttachmentPreview
                 key={img.id}
-                className="relative h-16 w-16 overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700"
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element -- blob: object URLs */}
-                <img
-                  src={img.url}
-                  alt={img.name}
-                  className="h-full w-full object-cover"
-                />
-                <button
-                  type="button"
-                  className="absolute top-0.5 right-0.5 rounded bg-black/60 px-1 text-xs text-white"
-                  onClick={() => onRemoveImage(img.id)}
-                  aria-label="Remove image"
-                >
-                  ×
-                </button>
-              </div>
+                img={img}
+                onRemove={() => onRemoveImage(img.id)}
+              />
             ))}
             {docPreviews.map((d) => (
               <div
                 key={d.id}
-                className="flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs dark:border-slate-700 dark:bg-slate-900"
+                className="flex min-w-0 max-w-full items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs dark:border-slate-700 dark:bg-slate-800"
               >
-                <FileText className="size-3.5 shrink-0" />
-                <span className="max-w-[140px] truncate">{d.name}</span>
+                <FileText className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                <span className="min-w-0 flex-1 truncate" title={d.name}>
+                  {d.name}
+                </span>
                 <button
                   type="button"
                   className="text-slate-500 hover:text-red-600 dark:hover:text-red-400"
@@ -171,7 +212,7 @@ export function ChatComposerBar({
             <FileText className="size-4" />
           </Button>
 
-          {chatModels.length > 0 ? (
+          {clientMounted && chatModels.length > 0 ? (
             <select
               className="h-10 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100"
               value={selectedModelId ?? ""}
@@ -225,6 +266,14 @@ export function ChatComposerBar({
             <Send className="size-4" />
           </Button>
         </div>
+
+        {clientMounted ? (
+          <div className="text-center text-[11px] leading-snug text-slate-500 dark:text-slate-400">
+            Multiple files: use Ctrl/Cmd or Shift in the file dialog. Up to{" "}
+            {CHAT_IMAGE_MAX_PER_MESSAGE} images and {DOCUMENT_MAX_PER_MESSAGE}{" "}
+            documents per message.
+          </div>
+        ) : null}
       </div>
     </div>
   );

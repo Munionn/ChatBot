@@ -1,8 +1,8 @@
 import {
   DEFAULT_CHAT_MODEL_OPTIONS,
-  DEFAULT_HF_CHAT_MODEL,
-  type ChatModelOption
+  DEFAULT_HF_CHAT_MODEL
 } from "@/lib/constants/chat-models";
+import type { ChatModelOption } from "@/lib/types/chat-models";
 
 import { defaultHfChatModel } from "./huggingface";
 

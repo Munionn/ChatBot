@@ -1,23 +1,11 @@
 "use client";
 
-import type { ChatModelOption } from "@/lib/constants/chat-models";
 import { authFetch } from "@/lib/supabase/fetch-with-session";
 
-export type ChatSummary = {
-  id: string;
-  title: string | null;
-  created_at: string;
-  updated_at: string;
-  last_message_at: string | null;
-};
+import type { ChatModelOption } from "@/lib/types/chat-models";
+import type { ChatMessageRow, ChatSummary } from "@/lib/types/chat";
 
-export type ChatMessageRow = {
-  id: string;
-  role: string;
-  content: string;
-  created_at: string;
-  model?: string | null;
-};
+export type { ChatMessageRow, ChatSummary, ChatModelOption };
 
 export async function fetchChats(): Promise<{ chats: ChatSummary[] }> {
   const res = await authFetch("/api/chats");
@@ -62,8 +50,6 @@ export async function deleteChat(chatId: string): Promise<void> {
     throw new Error(typeof j.error === "string" ? j.error : "Failed to delete chat");
   }
 }
-
-export type { ChatModelOption };
 
 export async function fetchChatModels(): Promise<{ models: ChatModelOption[] }> {
   const res = await authFetch("/api/chat-models");

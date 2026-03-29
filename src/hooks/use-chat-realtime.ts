@@ -4,7 +4,7 @@ import { useEffect, type MutableRefObject } from "react";
 import { useRouter } from "next/navigation";
 import type { QueryClient } from "@tanstack/react-query";
 
-import type { ChatMessageRow, ChatSummary } from "@/lib/chat/api";
+import type { ChatMessageRow, ChatSummary } from "@/lib/types/chat";
 import { chatKeys, messageKeys } from "@/lib/chat/query-keys";
 import {
   rowToChatSummary,
@@ -136,6 +136,10 @@ export function useChatRealtime({
             )
           };
         });
+
+        if (mapped.role === "user") {
+          void qc.invalidateQueries({ queryKey: messageKeys.byChat(cid) });
+        }
         return;
       }
 

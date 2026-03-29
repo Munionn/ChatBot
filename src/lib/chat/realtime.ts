@@ -1,4 +1,4 @@
-import type { ChatMessageRow, ChatSummary } from "./api";
+import type { ChatMessageRow, ChatSummary } from "@/lib/types/chat";
 
 export function rowToChatSummary(row: Record<string, unknown>): ChatSummary {
   return {

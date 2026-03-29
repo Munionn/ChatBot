@@ -5,7 +5,7 @@ import {
   hfMaxTokens,
   hfTemperature
 } from "./huggingface";
-import type { StreamChatInput } from "./types";
+import type { StreamChatInput } from "@/lib/types/llm";
 
 export async function* streamChat(
   input: StreamChatInput

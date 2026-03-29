@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Menu, MessageSquarePlus, PanelLeftClose, Search, Trash2 } from "lucide-react";
 
-import type { ChatSummary } from "@/lib/chat/api";
+import type { ChatSummary } from "@/lib/types/chat";
 import { Button } from "@/components/ui/button";
 import { useChatSession } from "@/components/chat/chat-session-context";
 import { Input } from "@/components/ui/input";

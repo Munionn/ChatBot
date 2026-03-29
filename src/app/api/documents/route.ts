@@ -139,6 +139,7 @@ export async function POST(request: Request) {
   });
 
   if (insErr) {
+    console.error("[api/documents] documents insert failed:", insErr);
     return NextResponse.json({ error: insErr.message }, { status: 500 });
   }
 
@@ -152,6 +153,7 @@ export async function POST(request: Request) {
     });
 
   if (upErr) {
+    console.error("[api/documents] storage upload failed:", upErr);
     await supabase.from("documents").delete().eq("id", docId);
     return NextResponse.json(
       { error: upErr.message ?? "Storage upload failed" },
@@ -205,13 +207,11 @@ export async function POST(request: Request) {
       chunk_count: rows.length
     });
   } catch (e) {
+    const message =
+      e instanceof Error ? e.message : "Document processing failed";
+    console.error("[api/documents] processing failed:", e);
     await supabase.storage.from(DOCUMENT_BUCKET).remove([storagePath]).catch(() => {});
     await supabase.from("documents").delete().eq("id", docId);
-    return NextResponse.json(
-      {
-        error: e instanceof Error ? e.message : "Document processing failed"
-      },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
