@@ -137,9 +137,6 @@ export function useChatRealtime({
           };
         });
 
-        if (mapped.role === "user") {
-          void qc.invalidateQueries({ queryKey: messageKeys.byChat(cid) });
-        }
         return;
       }
 

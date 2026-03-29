@@ -24,7 +24,13 @@ export function ChatThread({
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages, streamingText]);
 
-  if (isLoading) {
+  const streamingActive = streamingText !== null;
+
+  if (
+    isLoading &&
+    !streamingActive &&
+    messages.length === 0
+  ) {
     return (
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4">
         <Skeleton className="ml-auto h-16 w-[min(100%,320px)] rounded-2xl" />
@@ -33,8 +39,6 @@ export function ChatThread({
       </div>
     );
   }
-
-  const streamingActive = streamingText !== null;
   const showEmpty =
     messages.length === 0 && !streamingActive;
 

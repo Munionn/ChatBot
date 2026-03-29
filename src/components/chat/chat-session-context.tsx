@@ -11,10 +11,12 @@ import {
   type ReactNode
 } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import type { User } from "@supabase/supabase-js";
 
 import { isGuestUser } from "@/lib/auth/session-context";
 import { ANON_SESSION_STORAGE_KEY } from "@/lib/constants/chat";
+import { chatKeys, messageKeys } from "@/lib/chat/query-keys";
 import { parseGuestRemainingScalar } from "@/lib/guest-quota";
 import { deferRouterAction } from "@/lib/next/defer-router-action";
 import { authFetch } from "@/lib/supabase/fetch-with-session";
@@ -51,6 +53,7 @@ const AUTH_CHAIN_DELAY_MS = 75;
 export function ChatSessionProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
+  const queryClient = useQueryClient();
   const authChainRef = useRef(Promise.resolve());
 
   const enqueueAuth = useCallback((task: () => Promise<void>) => {
@@ -124,6 +127,9 @@ export function ChatSessionProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     await enqueueAuth(async () => {
+      queryClient.removeQueries({ queryKey: chatKeys.all });
+      queryClient.removeQueries({ queryKey: messageKeys.all });
+
       try {
         const { error } = await supabaseBrowser.auth.signOut({ scope: "local" });
         if (error) {
@@ -158,7 +164,7 @@ export function ChatSessionProvider({ children }: { children: ReactNode }) {
         router.refresh();
       });
     });
-  }, [enqueueAuth, ensureGuestSession, pathname, router]);
+  }, [enqueueAuth, ensureGuestSession, pathname, queryClient, router]);
 
   useEffect(() => {
     let cancelled = false;

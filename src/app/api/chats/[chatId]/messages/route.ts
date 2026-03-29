@@ -223,7 +223,12 @@ export async function POST(request: Request, context: RouteContext) {
     .order("created_at", { ascending: true })
     .limit(40);
 
-  const chatMessages = (history ?? [])
+  type Turn = {
+    role: "user" | "assistant" | "system";
+    content: string;
+  };
+
+  let chatMessages: Turn[] = (history ?? [])
     .filter(
       (m) =>
         m.role === "user" || m.role === "assistant" || m.role === "system"
@@ -232,6 +237,14 @@ export async function POST(request: Request, context: RouteContext) {
       role: m.role as "user" | "assistant" | "system",
       content: m.content
     }));
+
+
+  const last = chatMessages[chatMessages.length - 1];
+  const hasCurrentUserTurn =
+    last?.role === "user" && last.content === content;
+  if (!hasCurrentUserTurn) {
+    chatMessages = [...chatMessages, { role: "user", content }];
+  }
 
   const encoder = new TextEncoder();
 

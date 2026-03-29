@@ -52,6 +52,28 @@ async function readSseStream(
   const decoder = new TextDecoder();
   let buffer = "";
 
+  const handleLine = (line: string) => {
+    if (!line.startsWith("data: ")) return;
+    let payload: {
+      type: string;
+      text?: string;
+      remaining?: number;
+      message?: string;
+    };
+    try {
+      payload = JSON.parse(line.slice(6)) as typeof payload;
+    } catch {
+      return;
+    }
+    if (payload.type === "delta" && typeof payload.text === "string") {
+      onDelta(payload.text);
+    }
+    if (payload.type === "done") onDoneRemaining(payload.remaining);
+    if (payload.type === "error") {
+      throw new Error(payload.message ?? "Stream error");
+    }
+  };
+
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -60,25 +82,13 @@ async function readSseStream(
     buffer = chunks.pop() ?? "";
 
     for (const chunk of chunks) {
-      const line = chunk.trim();
-      if (!line.startsWith("data: ")) continue;
-      let payload: {
-        type: string;
-        text?: string;
-        remaining?: number;
-        message?: string;
-      };
-      try {
-        payload = JSON.parse(line.slice(6)) as typeof payload;
-      } catch {
-        continue;
-      }
-      if (payload.type === "delta" && payload.text) onDelta(payload.text);
-      if (payload.type === "done") onDoneRemaining(payload.remaining);
-      if (payload.type === "error") {
-        throw new Error(payload.message ?? "Stream error");
-      }
+      handleLine(chunk.trim());
     }
+  }
+
+  const tail = buffer.trim();
+  if (tail) {
+    handleLine(tail);
   }
 }
 
@@ -158,11 +168,12 @@ export default function ChatShell() {
 
   useEffect(() => {
     if (pathname !== "/chat") return;
+    if (routingChatId != null) return;
     if (!chatsQuery.isSuccess) return;
     const list = chatsQuery.data?.chats ?? [];
     if (list.length === 0) return;
     deferRouterAction(() => router.replace(`/chat/${list[0].id}`));
-  }, [pathname, chatsQuery.isSuccess, chatsQuery.data, router]);
+  }, [pathname, chatsQuery.isSuccess, chatsQuery.data, router, routingChatId]);
 
   useEffect(() => {
     const err = messagesQuery.error;
@@ -369,7 +380,6 @@ export default function ChatShell() {
           targetId = created.id;
           setRoutingChatId(targetId);
           await qc.invalidateQueries({ queryKey: chatKeys.list() });
-          deferRouterAction(() => router.push(`/chat/${targetId}`));
         }
 
         const documentIds: string[] = [];
@@ -516,6 +526,12 @@ export default function ChatShell() {
             }
           );
 
+          if (chatId !== targetId) {
+            deferRouterAction(() => {
+              router.replace(`/chat/${targetId}`);
+            });
+          }
+
           setStreamingText(null);
           setSendState("idle");
           await qc.invalidateQueries({ queryKey: msgKey });
@@ -543,7 +559,7 @@ export default function ChatShell() {
         sendInFlightRef.current = false;
       }
     },
-    [sessionUser, images, docs, qc, router, selectedModelId, refreshRemaining]
+    [sessionUser, images, docs, qc, router, selectedModelId, refreshRemaining, chatId]
   );
 
   const handleSend = useCallback(() => {
@@ -600,7 +616,7 @@ export default function ChatShell() {
       <div className="flex min-h-0 flex-1">
         <ChatSidebar
           chats={chatsQuery.data?.chats ?? []}
-          activeChatId={chatId}
+          activeChatId={effectiveChatId}
           search={sidebarSearch}
           onSearchChange={setSidebarSearch}
           onSelectChat={(id) => router.push(`/chat/${id}`)}
@@ -629,7 +645,8 @@ export default function ChatShell() {
             isLoading={
               sessionReady &&
               !!effectiveChatId &&
-              messagesQuery.isLoading
+              messagesQuery.isLoading &&
+              streamingText === null
             }
             emptyHint={
               effectiveChatId
