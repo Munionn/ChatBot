@@ -48,12 +48,14 @@ export default function LoginPage() {
 
     try {
       const emailTrimmed = email.trim();
-      const origin = window.location.origin;
+      const base =
+        (process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ||
+          window.location.origin) ?? window.location.origin;
 
       const { error: otpError } = await supabaseBrowser.auth.signInWithOtp({
         email: emailTrimmed,
         options: {
-          emailRedirectTo: `${origin}/auth/callback`
+          emailRedirectTo: `${base}/auth/callback`
         }
       });
 
