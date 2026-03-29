@@ -12,7 +12,11 @@ import { verifyDocumentsForChatMessage } from "@/lib/documents/verify-for-messag
 import { resolveAllowedChatModel } from "@/lib/llm/allowed-models";
 import type { ContextDoc } from "@/lib/types/llm";
 import { getHuggingFaceClient } from "@/lib/llm/huggingface";
-import { streamChat } from "@/lib/llm/stream-chat";
+import { sanitizeAssistantText } from "@/lib/llm/sanitize-assistant-text";
+import {
+  chatCompletionTextFallback,
+  streamChat
+} from "@/lib/llm/stream-chat";
 import { parseGuestConsumeResult, parseGuestRemainingScalar } from "@/lib/guest-quota";
 import { getRouteUser } from "@/lib/supabase/route-auth";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -267,6 +271,29 @@ export async function POST(request: Request, context: RouteContext) {
         })) {
           fullAssistant += delta;
           send({ type: "delta", text: delta });
+        }
+
+        fullAssistant = sanitizeAssistantText(fullAssistant);
+
+        if (!fullAssistant.trim()) {
+          const fallback = await chatCompletionTextFallback({
+            model,
+            messages: chatMessages,
+            contextDocs: contextDocsForStream,
+            lastUserImageDataUrls
+          });
+          if (fallback.trim()) {
+            fullAssistant = fallback;
+            send({ type: "delta", text: fallback });
+          } else {
+            send({
+              type: "error",
+              message:
+                "The model returned no text. Check HUGGINGFACE_API_TOKEN on Vercel, model id, and Inference API access for this model."
+            });
+            controller.close();
+            return;
+          }
         }
 
         const { data: assistantRow, error: assistErr } = await supabase

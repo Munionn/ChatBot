@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 
+import { sanitizeAssistantText } from "@/lib/llm/sanitize-assistant-text";
 import type { ChatMessageRow } from "@/lib/types/chat";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -72,7 +73,9 @@ export function ChatThread({
                   ))}
                 </div>
               ) : null}
-              {m.content}
+              {m.role === "assistant"
+                ? sanitizeAssistantText(m.content)
+                : m.content}
               {m.role === "assistant" && m.model ? (
                 <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
                   {m.model}
@@ -85,7 +88,7 @@ export function ChatThread({
             <div className="mr-auto max-w-[min(100%,85%)] rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm whitespace-pre-wrap text-slate-900 shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
               {streamingText.length > 0 ? (
                 <>
-                  {streamingText}
+                  {sanitizeAssistantText(streamingText)}
                   <span
                     className="ml-0.5 inline-block h-4 w-1.5 animate-pulse bg-sky-500 align-middle dark:bg-sky-400"
                     aria-hidden
